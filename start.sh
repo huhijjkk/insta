@@ -8,3 +8,4 @@ pip install -r requirements.txt
 playwright install chromium
 
 python bot.py
+apt-get install -y xvfb
