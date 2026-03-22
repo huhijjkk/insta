@@ -6,6 +6,5 @@ apt-get install -y libglib2.0-0 libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 
 pip install -r requirements.txt
 
 playwright install chromium
-
-python bot.py
 apt-get install -y xvfb
+python bot.py
