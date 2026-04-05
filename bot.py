@@ -1,4 +1,6 @@
 #USERNAM TO MEDIA INSTA BOT(OG)
+
+
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from playwright.sync_api import sync_playwright
@@ -60,30 +62,35 @@ L.context._session.cookies.set(
     domain=".instagram.com"
 )
 print("Instaloader session active")
-def get_profile_info(username):
+def get_profile_info_playwright(username, context):
     try:
-        url = f"https://i.instagram.com/api/v1/users/web_profile_info/?username={username}"
+        page = context.new_page()
 
-        headers = {
-            "User-Agent": "Instagram 275.0.0.27.98 Android",
-            "Accept": "*/*",
-            "X-IG-App-ID": "936619743392459"
+        url = f"https://www.instagram.com/{username}/"
+        page.goto(url, wait_until="domcontentloaded")
+
+        time.sleep(random.uniform(3, 5))
+
+        # get page content
+        content = page.content()
+
+        # extract JSON from script
+        data = page.evaluate("""
+        () => {
+            return window.__additionalDataLoaded || null
         }
+        """)
 
-        res = requests.get(url, headers=headers, timeout=10)
-
-        if res.status_code != 200:
-            log(f"HTTP error: {res.status_code}")
-            log(res.text[:200])
+        if not match:
+            log("Failed to extract profile JSON")
+            page.close()
             return None
 
-        data = res.json()
+        data = json.loads(match.group(1))
 
-        user = data.get("data", {}).get("user")
+        user = data["entry_data"]["ProfilePage"][0]["graphql"]["user"]
 
-        if not user:
-            log("User not found in response")
-            return None
+        page.close()
 
         return {
             "username": user["username"],
@@ -98,33 +105,68 @@ def get_profile_info(username):
         }
 
     except Exception as e:
-        log(f"Profile error: {e}")
+        log(f"Playwright profile error: {e}")
         return None
 # =========================
 # START PLAYWRIGHT
 # =========================
 
 print("Starting browser...")
+def wait_rate_limit():
+    global LAST_REQUEST_TIME
 
-def get_profile_posts(username, limit=100):
+    now = time.time()
+    delay = 2  # seconds between requests
 
-    posts = []
+    if now - LAST_REQUEST_TIME < delay:
+        time.sleep(delay - (now - LAST_REQUEST_TIME))
 
-    profile = instaloader.Profile.from_username(
-        L.context,
-        username
-    )
+    LAST_REQUEST_TIME = time.time()
+def get_profile_info_playwright(username, context):
+    try:
+        page = context.new_page()
 
-    for post in profile.get_posts():
+        page.goto(f"https://www.instagram.com/{username}/", wait_until="domcontentloaded")
 
-        posts.append(post)
+        time.sleep(random.uniform(3, 5))
 
-        if len(posts) >= limit:
-            break
+        # Extract from meta (MOST STABLE METHOD)
+        description = page.locator('meta[property="og:description"]').get_attribute("content")
 
-    log(f"Collected {len(posts)} posts using Instaloader")
+        if not description:
+            page.close()
+            return None
 
-    return posts
+        # Example: "1,234 Followers, 100 Following, 10 Posts - See Instagram photos..."
+        parts = description.split(",")
+
+        followers = parts[0].split()[0]
+        following = parts[1].split()[0]
+        posts = parts[2].split()[0]
+
+        # profile pic
+        profile_pic = page.locator('meta[property="og:image"]').get_attribute("content")
+
+        # username + name
+        title = page.title()
+
+        page.close()
+
+        return {
+            "username": username,
+            "full_name": title.split("(")[0].strip(),
+            "bio": "",
+            "followers": followers,
+            "following": following,
+            "posts": posts,
+            "profile_pic": profile_pic,
+            "is_private": False,
+            "is_verified": False
+        }
+
+    except Exception as e:
+        log(f"Playwright profile error: {e}")
+        return None
 def extract_media(post):
 
     items = []
@@ -261,6 +303,8 @@ def scrape_background(job, context):
 def playwright_worker():
 
     log("Starting browser in worker thread...")
+    global browser_context
+    browser_context = context
 
     with sync_playwright() as play:
 
@@ -274,7 +318,8 @@ def playwright_worker():
         )
 
         context = browser.new_context()
-
+        global browser_context
+        browser_context = context 
         context.add_cookies([{
             "name": "sessionid",
             "value": IG_SESSIONID,
@@ -356,7 +401,7 @@ def profile_handler(message):
             "❌ Invalid input.\n\nSend:\n• Instagram username\n• Instagram profile link"
         )
         return
-    profile_data = get_profile_info(username)
+    profile_data = get_profile_info_playwright(username, browser_context)
 
     if not profile_data:
         bot.send_message(message.chat.id, "❌ Failed to fetch profile info")
@@ -575,3 +620,4 @@ threading.Thread(
 ).start()
 
 bot.infinity_polling()
+        
