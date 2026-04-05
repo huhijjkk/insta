@@ -258,11 +258,11 @@ def playwright_worker():
                 break
 
             try:
-            	# fetch profile info first
-				job.profile = get_profile_info(job.username, context)
+				# fetch profile info first
+               job.profile = get_profile_info(job.username, context)
 
-				# then scrape posts
-				scrape_background(job, context)
+               # then scrape posts
+               scrape_background(job, context)
             except Exception as e:
                 log(f"Worker error: {e}")
 
