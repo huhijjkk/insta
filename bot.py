@@ -62,21 +62,38 @@ L.context._session.cookies.set(
 print("Instaloader session active")
 def get_profile_info(username):
     try:
-        profile = instaloader.Profile.from_username(L.context, username)
+        url = f"https://www.instagram.com/{username}/?__a=1&__d=dis"
 
-        data = {
-            "username": profile.username,
-            "full_name": profile.full_name,
-            "bio": profile.biography,
-            "followers": profile.followers,
-            "following": profile.followees,
-            "posts": profile.mediacount,
-            "is_private": profile.is_private,
-            "is_verified": profile.is_verified,
-            "profile_pic": profile.profile_pic_url
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Accept": "application/json",
         }
 
-        return data
+        res = requests.get(url, headers=headers, timeout=10)
+
+        if res.status_code != 200:
+            log(f"HTTP error: {res.status_code}")
+            return None
+
+        data = res.json()
+
+        user = data.get("graphql", {}).get("user")
+
+        if not user:
+            log("User not found in response")
+            return None
+
+        return {
+            "username": user["username"],
+            "full_name": user["full_name"],
+            "bio": user["biography"],
+            "followers": user["edge_followed_by"]["count"],
+            "following": user["edge_follow"]["count"],
+            "posts": user["edge_owner_to_timeline_media"]["count"],
+            "profile_pic": user["profile_pic_url_hd"],
+            "is_private": user["is_private"],
+            "is_verified": user["is_verified"]
+        }
 
     except Exception as e:
         log(f"Profile error: {e}")
@@ -370,15 +387,14 @@ def profile_handler(message):
 👤 <b>{profile_data['full_name']}</b>
 📛 @{profile_data['username']}
 
-👥 Followers: {profile_data['followers']}
-➡️ Following: {profile_data['following']}
-📸 Posts: {profile_data['posts']}
+👥 Followers: {profile_data['followers']:,}
+➡️ Following: {profile_data['following']:,}
+📸 Posts: {profile_data['posts']:,}
 
-🔒 Private: {profile_data['is_private']}
-✔️ Verified: {profile_data['is_verified']}
+🔒 Private: {'Yes' if profile_data['is_private'] else 'No'}
+✔️ Verified: {'Yes' if profile_data['is_verified'] else 'No'}
 
-📝 Bio:
-{profile_data['bio'] or 'No bio'}
+📝 {profile_data['bio'] or 'No bio'}
 """
 
     bot.send_photo(
@@ -557,4 +573,4 @@ threading.Thread(
 ).start()
 
 bot.infinity_polling()
-    
+                    
