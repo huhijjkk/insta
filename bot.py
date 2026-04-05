@@ -361,44 +361,41 @@ def profile_handler(message):
     username = extract_username(message.text)
 
     if not username:
-
         bot.send_message(
             message.chat.id,
             "❌ Invalid input.\n\nSend:\n• Instagram username\n• Instagram profile link"
         )
         return
 
-    try:
-        bot.send_photo(message.chat.id, p['profilePic'], caption=text)
-    except:
-        bot.send_message(message.chat.id, text)
     job = Job(username)
     user_jobs[message.chat.id] = job
 
     bot.send_message(
         message.chat.id,
-        "Collecting posts from profile....\nPlease wait..."
+        "🔍 Fetching profile info & posts...\nPlease wait..."
     )
 
     job_queue.put(job)
 
-    # wait until scraper collects something
+    # wait until profile OR posts fetched
     wait_time = 0
-    while len(job.posts) == 0 and wait_time < 40:
+    while (job.profile is None and len(job.posts) == 0) and wait_time < 40:
         time.sleep(2)
         wait_time += 2
 
-    if len(job.posts) == 0:
-
+    # ❌ nothing fetched
+    if job.profile is None and len(job.posts) == 0:
         bot.send_message(
             message.chat.id,
-            "❌ Failed to collect posts.\nInstagram may have blocked the request."
+            "❌ Failed to fetch profile.\nInstagram may have blocked the request."
         )
         return
-        if job.profile:
-    p = job.profile
 
-    text = f"""👤 Profile Info
+    # ✅ SEND PROFILE INFO FIRST
+    if job.profile:
+        p = job.profile
+
+        text = f"""👤 Profile Info
 
 Name: {p['name']}
 Username: @{username}
@@ -411,13 +408,24 @@ Bio:
 {p['bio']}
 """
 
-    try:
-        bot.send_photo(message.chat.id, p['profilePic'], caption=text)
-    except:
-        bot.send_message(message.chat.id, text)
+        try:
+            if p["profilePic"]:
+                bot.send_photo(message.chat.id, p['profilePic'], caption=text)
+            else:
+                bot.send_message(message.chat.id, text)
+        except:
+            bot.send_message(message.chat.id, text)
 
+    # ❌ if no posts
+    if len(job.posts) == 0:
+        bot.send_message(
+            message.chat.id,
+            "⚠️ Profile loaded but no posts found (private or blocked)."
+        )
+        return
+
+    # ✅ SEND BUTTON
     markup = InlineKeyboardMarkup()
-
     markup.add(
         InlineKeyboardButton("Download 10 Posts", callback_data="next"),
         InlineKeyboardButton("Cancel", callback_data="cancel")
