@@ -134,89 +134,21 @@ def get_post_from_url(post_url):
 
 def scrape_background(job, context):
     username = job.username
-    log(f"Scraping started for {username}")
+    log(f"Scraping (Instaloader) for {username}")
 
     try:
+        posts = get_profile_posts(username, limit=100)
 
-        page = context.new_page()
+        for post in posts:
+            url = f"https://www.instagram.com/p/{post.shortcode}/"
 
-        url = f"https://www.instagram.com/{username}/"
+            if url not in job.posts:
+                job.posts.append(url)
 
-        delay = random.uniform(4,7)
-        time.sleep(delay)
-
-        page.goto(url, wait_until="domcontentloaded")
-
-        time.sleep(5)
-
-        log(f"Current URL: {page.url}")
-        if "challenge" in page.url:
-            log("Instagram triggered a security challenge. Session is blocked.")
-            page.close()
-            return
-
-        if "accounts/login" in page.url:
-            log("Session expired. Instagram requires login.")
-            page.close()
-            return
-        # wait until page loads
-        page.wait_for_load_state("networkidle")
-
-        # small delay for JS rendering
-        time.sleep(3)
-
-        # scroll once to trigger posts loading
-        page.evaluate("""
-        window.scrollBy({
-            top: 800,
-            left: 0,
-            behavior: 'smooth'
-        });
-        """)
-        time.sleep(random.uniform(4,6))
-
-        for _ in range(20):
-
-            if not job.running:
-                break
-            log("Scanning page for posts...")
-            links = page.evaluate("""
-                Array.from(document.querySelectorAll('a'))
-                    .map(a => a.href)
-                    .filter(h => h.includes('/p/') || h.includes('/reel/'))
-            """)
-
-            new_posts = 0
-
-            for link in links:
-                link = link.split("?")[0]
-
-                if link not in job.posts:
-                    job.posts.append(link)
-                    new_posts += 1
-
-            log(f"Collected posts: {len(job.posts)} (+{new_posts})")
-
-            page.evaluate("""
-            window.scrollBy({
-                top: 1200,
-                left: 0,
-                behavior: 'smooth'
-            });
-            """)
-
-            time.sleep(3)
-
-        page.close()
+        log(f"Collected {len(job.posts)} posts using Instaloader")
 
     except Exception as e:
-        log(f"Scraper error: {e}")
-
-    finally:
-        try:
-            page.close()
-        except:
-            pass
+        log(f"Instaloader scraping error: {e}")
 
 def playwright_worker():
 
