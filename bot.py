@@ -16,7 +16,7 @@ import instaloader
 # BOT TOKEN
 # =========================
 
-TOKEN = "31692982599%3AZxQHYK849fXkZU%3A5%3AAYid8-0UFtDvt87Ksva3MbKD7U5Kb4i6_DI5BQGU9A"
+TOKEN = "8429656135:AAFZcHr-sKqcp5eBYsJWeP8YaSlvCeoyp2s"
 bot = telebot.TeleBot(TOKEN, threaded=True)
 from queue import Queue
 
@@ -25,7 +25,7 @@ job_queue = Queue()
 # INSTAGRAM SESSION
 # =========================
 
-IG_SESSIONID = "80080172860%3AVVaoyS6Nn1TxEH%3A12%3AAYirglVwcdWThjokSaOe82QPLQRmv3P7DxdKN9SZOw"
+IG_SESSIONID = "31692982599%3AZxQHYK849fXkZU%3A5%3AAYid8-0UFtDvt87Ksva3MbKD7U5Kb4i6_DI5BQGU9A"
 
 # =========================
 # JOB SYSTEM
