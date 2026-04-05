@@ -573,4 +573,3 @@ threading.Thread(
 ).start()
 
 bot.infinity_polling()
-                    
