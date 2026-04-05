@@ -201,7 +201,7 @@ def scrape_background(job, context):
             links = page.evaluate("""
                 Array.from(document.querySelectorAll('a'))
                     .map(a => a.href)
-                    .filter(h => h.includes('/p/') || h.includes('/reel/'))
+                    .filter(h => h.includes('/p/') || h.includes('/reel/') || h.includes('/tv/'))
             """)
 
             new_posts = 0
