@@ -258,7 +258,11 @@ def playwright_worker():
                 break
 
             try:
-                scrape_background(job, context)
+                # fetch profile info first
+               job.profile = get_profile_info(job.username, context)
+
+               # then scrape posts
+               scrape_background(job, context)
             except Exception as e:
                 log(f"Worker error: {e}")
 
@@ -298,8 +302,55 @@ class Job:
         self.posts = []
         self.sent = 0
         self.running = True
+        self.profile = None
 user_jobs ={}
 job_queue = Queue()
+
+def get_profile_info(username, context):
+    try:
+        page = context.new_page()
+
+        url = f"https://www.instagram.com/{username}/"
+        page.goto(url, wait_until="domcontentloaded")
+
+        time.sleep(5)
+
+        # handle blocked / login
+        if "login" in page.url or "challenge" in page.url:
+            page.close()
+            return None
+
+        # extract data from page
+        data = page.evaluate("""
+        () => {
+            const name = document.querySelector("h2")?.innerText || "";
+            const bio = document.querySelector("div.-vDIg span")?.innerText || "";
+
+            const stats = document.querySelectorAll("header section ul li span");
+            
+            let posts = stats[0]?.innerText || "0";
+            let followers = stats[1]?.innerText || "0";
+            let following = stats[2]?.innerText || "0";
+
+            const profilePic = document.querySelector("header img")?.src || "";
+
+            return {
+                name,
+                bio,
+                posts,
+                followers,
+                following,
+                profilePic
+            };
+        }
+        """)
+
+        page.close()
+        return data
+
+    except Exception as e:
+        log(f"Profile fetch error: {e}")
+        return None
 # =========================
 # USERNAME HANDLER
 # =========================
@@ -317,6 +368,10 @@ def profile_handler(message):
         )
         return
 
+    try:
+        bot.send_photo(message.chat.id, p['profilePic'], caption=text)
+    except:
+        bot.send_message(message.chat.id, text)
     job = Job(username)
     user_jobs[message.chat.id] = job
 
@@ -340,6 +395,26 @@ def profile_handler(message):
             "❌ Failed to collect posts.\nInstagram may have blocked the request."
         )
         return
+        if job.profile:
+    p = job.profile
+
+    text = f"""👤 Profile Info
+
+Name: {p['name']}
+Username: @{username}
+
+Posts: {p['posts']}
+Followers: {p['followers']}
+Following: {p['following']}
+
+Bio:
+{p['bio']}
+"""
+
+    try:
+        bot.send_photo(message.chat.id, p['profilePic'], caption=text)
+    except:
+        bot.send_message(message.chat.id, text)
 
     markup = InlineKeyboardMarkup()
 
