@@ -225,7 +225,7 @@ def playwright_worker():
     with sync_playwright() as play:
 
         browser = play.chromium.launch(
-            headless=False,
+            headless=True,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
