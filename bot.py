@@ -25,7 +25,7 @@ job_queue = Queue()
 # INSTAGRAM SESSION
 # =========================
 
-IG_SESSIONID = "35371522642%3AORizfmJeXDFGpI%3A14%3AAYiJ9XLwJStQ-tB62RWpP4ZN4kKkB7-xI5qsS8Oa_g"
+IG_SESSIONID = "36356700560%3APx9gkdAtLrspRb%3A19%3AAYhZQ6YXbjHkAx2k5B-bMWc6jNAknaaWnLX-DiDrzg"
 
 # =========================
 # JOB SYSTEM
@@ -60,9 +60,6 @@ L.context._session.cookies.set(
     domain=".instagram.com"
 )
 print("Instaloader session active")
-# =========================
-# START PLAYWRIGHT
-# =========================
 def get_profile_info(username):
     try:
         profile = instaloader.Profile.from_username(L.context, username)
@@ -70,18 +67,24 @@ def get_profile_info(username):
         data = {
             "username": profile.username,
             "full_name": profile.full_name,
+            "bio": profile.biography,
             "followers": profile.followers,
             "following": profile.followees,
             "posts": profile.mediacount,
-            "bio": profile.biography,
+            "is_private": profile.is_private,
+            "is_verified": profile.is_verified,
             "profile_pic": profile.profile_pic_url
         }
 
         return data
 
     except Exception as e:
-        log(f"Profile fetch error: {e}")
+        log(f"Profile error: {e}")
         return None
+# =========================
+# START PLAYWRIGHT
+# =========================
+
 print("Starting browser...")
 
 def get_profile_posts(username, limit=100):
@@ -201,7 +204,7 @@ def scrape_background(job, context):
             links = page.evaluate("""
                 Array.from(document.querySelectorAll('a'))
                     .map(a => a.href)
-                    .filter(h => h.includes('/p/') || h.includes('/reel/') || h.includes('/tv/'))
+                    .filter(h => h.includes('/p/') || h.includes('/reel/'))
             """)
 
             new_posts = 0
@@ -326,7 +329,6 @@ job_queue = Queue()
 def profile_handler(message):
 
     username = extract_username(message.text)
-    
 
     if not username:
 
@@ -335,27 +337,12 @@ def profile_handler(message):
             "❌ Invalid input.\n\nSend:\n• Instagram username\n• Instagram profile link"
         )
         return
-    profile = get_profile_info(username)
+    profile_data = get_profile_info(username)
 
-    if not profile:
+    if not profile_data:
         bot.send_message(message.chat.id, "❌ Failed to fetch profile info")
         return
-    caption = f"""
-👤 Username: {profile['username']}
-📛 Name: {profile['full_name']}
-👥 Followers: {profile['followers']}
-➡️ Following: {profile['following']}
-📸 Posts: {profile['posts']}
 
-📝 Bio:
-{profile['bio']}
-"""
-
-    try:
-        response = requests.get(profile['profile_pic'])
-        bot.send_photo(message.chat.id, response.content, caption=caption)
-    except:
-        bot.send_message(message.chat.id, caption)
     job = Job(username)
     user_jobs[message.chat.id] = job
 
@@ -379,6 +366,27 @@ def profile_handler(message):
             "❌ Failed to collect posts.\nInstagram may have blocked the request."
         )
         return
+    caption = f"""
+👤 <b>{profile_data['full_name']}</b>
+📛 @{profile_data['username']}
+
+👥 Followers: {profile_data['followers']}
+➡️ Following: {profile_data['following']}
+📸 Posts: {profile_data['posts']}
+
+🔒 Private: {profile_data['is_private']}
+✔️ Verified: {profile_data['is_verified']}
+
+📝 Bio:
+{profile_data['bio'] or 'No bio'}
+"""
+
+    bot.send_photo(
+        message.chat.id,
+        profile_data['profile_pic'],
+        caption=caption,
+        parse_mode="HTML"
+    )
 
     markup = InlineKeyboardMarkup()
 
@@ -549,3 +557,4 @@ threading.Thread(
 ).start()
 
 bot.infinity_polling()
+    
