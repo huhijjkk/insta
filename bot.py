@@ -63,7 +63,25 @@ print("Instaloader session active")
 # =========================
 # START PLAYWRIGHT
 # =========================
+def get_profile_info(username):
+    try:
+        profile = instaloader.Profile.from_username(L.context, username)
 
+        data = {
+            "username": profile.username,
+            "full_name": profile.full_name,
+            "followers": profile.followers,
+            "following": profile.followees,
+            "posts": profile.mediacount,
+            "bio": profile.biography,
+            "profile_pic": profile.profile_pic_url
+        }
+
+        return data
+
+    except Exception as e:
+        log(f"Profile fetch error: {e}")
+        return None
 print("Starting browser...")
 
 def get_profile_posts(username, limit=100):
@@ -134,21 +152,89 @@ def get_post_from_url(post_url):
 
 def scrape_background(job, context):
     username = job.username
-    log(f"Scraping (Instaloader) for {username}")
+    log(f"Scraping started for {username}")
 
     try:
-        posts = get_profile_posts(username, limit=100)
 
-        for post in posts:
-            url = f"https://www.instagram.com/p/{post.shortcode}/"
+        page = context.new_page()
 
-            if url not in job.posts:
-                job.posts.append(url)
+        url = f"https://www.instagram.com/{username}/"
 
-        log(f"Collected {len(job.posts)} posts using Instaloader")
+        delay = random.uniform(4,7)
+        time.sleep(delay)
+
+        page.goto(url, wait_until="domcontentloaded")
+
+        time.sleep(5)
+
+        log(f"Current URL: {page.url}")
+        if "challenge" in page.url:
+            log("Instagram triggered a security challenge. Session is blocked.")
+            page.close()
+            return
+
+        if "accounts/login" in page.url:
+            log("Session expired. Instagram requires login.")
+            page.close()
+            return
+        # wait until page loads
+        page.wait_for_load_state("networkidle")
+
+        # small delay for JS rendering
+        time.sleep(3)
+
+        # scroll once to trigger posts loading
+        page.evaluate("""
+        window.scrollBy({
+            top: 800,
+            left: 0,
+            behavior: 'smooth'
+        });
+        """)
+        time.sleep(random.uniform(4,6))
+
+        for _ in range(20):
+
+            if not job.running:
+                break
+            log("Scanning page for posts...")
+            links = page.evaluate("""
+                Array.from(document.querySelectorAll('a'))
+                    .map(a => a.href)
+                    .filter(h => h.includes('/p/') || h.includes('/reel/'))
+            """)
+
+            new_posts = 0
+
+            for link in links:
+                link = link.split("?")[0]
+
+                if link not in job.posts:
+                    job.posts.append(link)
+                    new_posts += 1
+
+            log(f"Collected posts: {len(job.posts)} (+{new_posts})")
+
+            page.evaluate("""
+            window.scrollBy({
+                top: 1200,
+                left: 0,
+                behavior: 'smooth'
+            });
+            """)
+
+            time.sleep(3)
+
+        page.close()
 
     except Exception as e:
-        log(f"Instaloader scraping error: {e}")
+        log(f"Scraper error: {e}")
+
+    finally:
+        try:
+            page.close()
+        except:
+            pass
 
 def playwright_worker():
 
@@ -190,11 +276,7 @@ def playwright_worker():
                 break
 
             try:
-				# fetch profile info first
-               job.profile = get_profile_info(job.username, context)
-
-               # then scrape posts
-               scrape_background(job, context)
+                scrape_background(job, context)
             except Exception as e:
                 log(f"Worker error: {e}")
 
@@ -234,54 +316,8 @@ class Job:
         self.posts = []
         self.sent = 0
         self.running = True
-        self.profile = None
 user_jobs ={}
 job_queue = Queue()
-def get_profile_info(username, context):
-    try:
-        page = context.new_page()
-
-        url = f"https://www.instagram.com/{username}/"
-        page.goto(url, wait_until="domcontentloaded")
-
-        time.sleep(5)
-
-        # handle blocked / login
-        if "login" in page.url or "challenge" in page.url:
-            page.close()
-            return None
-
-        # extract data from page
-        data = page.evaluate("""
-        () => {
-            const name = document.querySelector("h2")?.innerText || "";
-            const bio = document.querySelector("div.-vDIg span")?.innerText || "";
-
-            const stats = document.querySelectorAll("header section ul li span");
-            
-            let posts = stats[0]?.innerText || "0";
-            let followers = stats[1]?.innerText || "0";
-            let following = stats[2]?.innerText || "0";
-
-            const profilePic = document.querySelector("header img")?.src || "";
-
-            return {
-                name,
-                bio,
-                posts,
-                followers,
-                following,
-                profilePic
-            };
-        }
-        """)
-
-        page.close()
-        return data
-
-    except Exception as e:
-        log(f"Profile fetch error: {e}")
-        return None
 # =========================
 # USERNAME HANDLER
 # =========================
@@ -290,86 +326,62 @@ def get_profile_info(username, context):
 def profile_handler(message):
 
     username = extract_username(message.text)
+    
 
     if not username:
+
         bot.send_message(
             message.chat.id,
             "❌ Invalid input.\n\nSend:\n• Instagram username\n• Instagram profile link"
         )
         return
+    profile = get_profile_info(username)
 
-    # create job
+    if not profile:
+        bot.send_message(message.chat.id, "❌ Failed to fetch profile info")
+        return
+    caption = f"""
+👤 Username: {profile['username']}
+📛 Name: {profile['full_name']}
+👥 Followers: {profile['followers']}
+➡️ Following: {profile['following']}
+📸 Posts: {profile['posts']}
+
+📝 Bio:
+{profile['bio']}
+"""
+
+    try:
+        response = requests.get(profile['profile_pic'])
+        bot.send_photo(message.chat.id, response.content, caption=caption)
+    except:
+        bot.send_message(message.chat.id, caption)
     job = Job(username)
     user_jobs[message.chat.id] = job
 
     bot.send_message(
         message.chat.id,
-        "🔍 Fetching profile & collecting posts...\nPlease wait..."
+        "Collecting posts from profile....\nPlease wait..."
     )
 
-    # send job to worker
     job_queue.put(job)
 
-    # =========================
-    # WAIT FOR PROFILE
-    # =========================
-    wait_profile = 0
-    while job.profile is None and wait_profile < 20:
-        time.sleep(1)
-        wait_profile += 1
-
-    # =========================
-    # SEND PROFILE INFO FIRST
-    # =========================
-    if job.profile:
-        p = job.profile
-
-        text = f"""👤 Profile Info
-
-Name: {p['name']}
-Username: @{username}
-
-Posts: {p['posts']}
-Followers: {p['followers']}
-Following: {p['following']}
-
-Bio:
-{p['bio']}
-"""
-
-        try:
-            bot.send_photo(message.chat.id, p['profilePic'], caption=text)
-        except:
-            bot.send_message(message.chat.id, text)
-
-    else:
-        bot.send_message(
-            message.chat.id,
-            "⚠️ Could not fetch profile info (private/blocked)."
-        )
-
-    # =========================
-    # WAIT FOR POSTS
-    # =========================
+    # wait until scraper collects something
     wait_time = 0
     while len(job.posts) == 0 and wait_time < 40:
         time.sleep(2)
         wait_time += 2
 
-    # =========================
-    # CHECK POSTS
-    # =========================
     if len(job.posts) == 0:
+
         bot.send_message(
             message.chat.id,
             "❌ Failed to collect posts.\nInstagram may have blocked the request."
         )
         return
 
-    # =========================
-    # SHOW BUTTONS
-    # =========================
     markup = InlineKeyboardMarkup()
+
     markup.add(
         InlineKeyboardButton("Download 10 Posts", callback_data="next"),
         InlineKeyboardButton("Cancel", callback_data="cancel")
