@@ -422,9 +422,89 @@ Bio:
             message.chat.id,
             "⚠️ Profile loaded but no posts found (private or blocked)."
         )
+        retur@bot.message_handler(func=lambda m: True)
+def profile_handler(message):
+
+    username = extract_username(message.text)
+
+    if not username:
+        bot.send_message(
+            message.chat.id,
+            "❌ Invalid input.\n\nSend:\n• Instagram username\n• Instagram profile link"
+        )
         return
 
-    # ✅ SEND BUTTON
+    # create job
+    job = Job(username)
+    user_jobs[message.chat.id] = job
+
+    bot.send_message(
+        message.chat.id,
+        "🔍 Fetching profile & collecting posts...\nPlease wait..."
+    )
+
+    # send job to worker
+    job_queue.put(job)
+
+    # =========================
+    # WAIT FOR PROFILE
+    # =========================
+    wait_profile = 0
+    while job.profile is None and wait_profile < 20:
+        time.sleep(1)
+        wait_profile += 1
+
+    # =========================
+    # SEND PROFILE INFO FIRST
+    # =========================
+    if job.profile:
+        p = job.profile
+
+        text = f"""👤 Profile Info
+
+Name: {p['name']}
+Username: @{username}
+
+Posts: {p['posts']}
+Followers: {p['followers']}
+Following: {p['following']}
+
+Bio:
+{p['bio']}
+"""
+
+        try:
+            bot.send_photo(message.chat.id, p['profilePic'], caption=text)
+        except:
+            bot.send_message(message.chat.id, text)
+
+    else:
+        bot.send_message(
+            message.chat.id,
+            "⚠️ Could not fetch profile info (private/blocked)."
+        )
+
+    # =========================
+    # WAIT FOR POSTS
+    # =========================
+    wait_time = 0
+    while len(job.posts) == 0 and wait_time < 40:
+        time.sleep(2)
+        wait_time += 2
+
+    # =========================
+    # CHECK POSTS
+    # =========================
+    if len(job.posts) == 0:
+        bot.send_message(
+            message.chat.id,
+            "❌ Failed to collect posts.\nInstagram may have blocked the request."
+        )
+        return
+
+    # =========================
+    # SHOW BUTTONS
+    # =========================
     markup = InlineKeyboardMarkup()
     markup.add(
         InlineKeyboardButton("Download 10 Posts", callback_data="next"),
@@ -436,160 +516,3 @@ Bio:
         f"✅ {len(job.posts)} posts ready.\nPress download.",
         reply_markup=markup
     )
-# =========================
-# CANCEL
-# =========================
-
-@bot.callback_query_handler(func=lambda call: call.data == "cancel")
-def cancel(call):
-
-    job = user_jobs.get(call.message.chat.id)
-
-    if job:
-        job.running = False
-
-    bot.send_message(call.message.chat.id,"Scraping stopped.")
-
-# =========================
-# SEND POSTS
-# =========================
-@bot.callback_query_handler(func=lambda call: call.data == "next")
-def send_next(call):
-
-    job = user_jobs.get(call.message.chat.id)
-
-    if not job:
-        bot.send_message(call.message.chat.id, "No active job")
-        return
-
-    start = job.sent
-    end = start + 10
-    posts = job.posts[start:end]
-    bot.send_message(call.message.chat.id, "Downloading media...")
-
-    # if not posts:
-    #     bot.send_message(call.message.chat.id, "Still collecting posts...")
-    #     return
-
-    from io import BytesIO
-    from PIL import Image
-
-    for post_url in posts:
-
-        try:
-
-            log(f"Processing: {post_url}")
-
-            post = get_post_from_url(post_url)
-
-            if not post:
-                bot.send_message(call.message.chat.id, f"⚠️ Could not load post\n{post_url}")
-                continue
-
-            medias = extract_media(post)
-
-            if not medias:
-                bot.send_message(call.message.chat.id, f"⚠️ No media found\n{post_url}")
-                continue
-
-            for media_type, media_url in medias:
-
-                try:
-
-                    log(f"Checking post: {post}")
-                    log(f"Media type: {media_type}")
-                    log(f"Media URL: {media_url}")
-
-                    if not media_url:
-                        bot.send_message(call.message.chat.id, f"⚠️ Empty media URL\n{post_url}")
-                        continue
-
-                    media_url = media_url.replace("&amp;", "&")
-                    media_url = media_url.replace(".heic", ".jpg")
-
-                    log(f"Final media URL: {media_url}")
-
-                    response = requests.get(media_url, timeout=30, stream=True)
-
-                    if response.status_code != 200:
-                        raise Exception(f"Media download failed (HTTP {response.status_code})")
-
-                    file = BytesIO(response.content)
-
-                    if media_type == "video":
-
-                        file.name = "video.mp4"
-
-                        bot.send_video(
-                            call.message.chat.id,
-                            file,
-                            width=720,
-                            height=1280,
-                            supports_streaming=True
-                        )
-
-                    else:
-
-                        img = Image.open(file).convert("RGB")
-
-                        jpeg = BytesIO()
-                        img.save(jpeg, format="JPEG")
-                        jpeg.seek(0)
-
-                        bot.send_photo(
-                            call.message.chat.id,
-                            jpeg,
-                        )
-
-                    time.sleep(random.uniform(1.5, 3))
-
-                except Exception as e:
-
-                    error_text = str(e)
-
-                    log(f"Media error: {error_text}")
-
-                    bot.send_message(
-                        call.message.chat.id,
-                        f"❌ Failed to send media\n\nPost:\n{post_url}\n\nReason:\n{error_text}"
-                    )
-
-        except Exception as e:
-
-            error_text = str(e)
-
-            log(f"Post processing error: {error_text}")
-
-            bot.send_message(
-                call.message.chat.id,
-                f"⚠️ Error processing post\n\nPost:\n{post_url}\n\nReason:\n{error_text}"
-            )
-            time.sleep(random.uniform(1.5, 3))
-
-           
-
-    job.sent += len(posts)
-
-    markup = InlineKeyboardMarkup()
-    markup.add(
-        InlineKeyboardButton("Next 10", callback_data="next"),
-        InlineKeyboardButton("Cancel", callback_data="cancel")
-    )
-
-    bot.send_message(
-        call.message.chat.id,
-        f"Sent {job.sent} posts",
-        reply_markup=markup
-    )
-# =========================
-# RUN BOT
-# =========================
-print("Bot started")
-
-# start playwright worker
-threading.Thread(
-    target=playwright_worker,
-    daemon=True
-).start()
-
-bot.infinity_polling()
