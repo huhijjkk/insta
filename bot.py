@@ -62,22 +62,24 @@ L.context._session.cookies.set(
 print("Instaloader session active")
 def get_profile_info(username):
     try:
-        url = f"https://www.instagram.com/{username}/?__a=1&__d=dis"
+        url = f"https://i.instagram.com/api/v1/users/web_profile_info/?username={username}"
 
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            "Accept": "application/json",
+            "User-Agent": "Instagram 275.0.0.27.98 Android",
+            "Accept": "*/*",
+            "X-IG-App-ID": "936619743392459"
         }
 
         res = requests.get(url, headers=headers, timeout=10)
 
         if res.status_code != 200:
             log(f"HTTP error: {res.status_code}")
+            log(res.text[:200])
             return None
 
         data = res.json()
 
-        user = data.get("graphql", {}).get("user")
+        user = data.get("data", {}).get("user")
 
         if not user:
             log("User not found in response")
